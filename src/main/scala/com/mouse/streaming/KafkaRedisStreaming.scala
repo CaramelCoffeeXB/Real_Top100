@@ -71,8 +71,8 @@ object KafkaRedisStreaming {
               val jedis = getConnet().getRedisConnet() //连接Redis
               val pipe = jedis.pipelined() //开启管道
               pipe.multi() //开启事务
-              pipe.del("去重数据","")
-              pipe.sadd("去重数据", "")
+              pipe.del("去重数据","")//删除redis中的上一批次去重数据
+              pipe.sadd("去重数据","")//创建新的去重数据set集合
               /**
                 * 二步：
                 * 1.将kafka数据解析出来，与redis中的数据进行判断，
@@ -85,16 +85,16 @@ object KafkaRedisStreaming {
                 val account = data(0) //0坐标 账户
                 val coin = data(1).toLong //1坐标 金币
                 val currentCoin = jedis.hget("每一个用户累计金币数", account).toLong
-                if ((coin + currentCoin) >= 100000) {
-                  //如果累加后大于10万金币，累计金币名单内删除该账户，该账户拉入过滤名单，将账户+时间戳保存到mysql
-                  pipe.hdel("每一个用户累计金币数", account) //删除该账号的累计值
-                  if(jedis.scard("奖励名单") < 100){ //如果奖励名单里超过100位，那么不添加新的数据
-                    pipe.sadd("奖励名单", account) //添加该账号到过滤名单中
-                  }
-                  val date = new Date(record.timestamp())
-                  val time: String = new SimpleDateFormat("yyyy-MM-dd").format(date)
-                  mysqlStatement.execute("insert into 奖励名单表 values(" + account + "," + System.currentTimeMillis() + "," + time + ")") //添加到mysql
-                }
+                    if ((coin + currentCoin) >= 100000) {
+                      //如果累加后大于10万金币，累计金币名单内删除该账户，该账户拉入过滤名单，将账户+时间戳保存到mysql
+                      pipe.hdel("每一个用户累计金币数", account) //删除该账号的累计值
+                          if(jedis.scard("奖励名单") < 100){ //如果奖励名单里超过100位，那么不添加新的数据
+                            pipe.sadd("奖励名单", account) //添加该账号到过滤名单中
+                          }
+                      val date = new Date(record.timestamp())
+                      val time: String = new SimpleDateFormat("yyyy-MM-dd").format(date)
+                      mysqlStatement.execute("insert into 奖励名单表 values(" + account + "," + System.currentTimeMillis() + "," + time + ")") //添加到mysql
+                    }
                 //不满足情况，则将该账户金币更新
                 pipe.hset("每一个用户累计金币数", account, (coin + currentCoin).toString)
 
@@ -104,17 +104,16 @@ object KafkaRedisStreaming {
                   */
                 pipe.sadd("去重数据", account + "_" + record.timestamp())
               }
-              //更新Offset
-              offsetRanges.foreach { offsetRange =>
-                println("partition : " + offsetRange.partition + " fromOffset:  " + offsetRange.fromOffset + " untilOffset: " + offsetRange.untilOffset)
-                val topic_partition_key = offsetRange.topic + "_" + offsetRange.partition
-                pipe.set(topic_partition_key, offsetRange.untilOffset.toString)
-              }
+                offsetRanges.foreach { offsetRange => //更新每个分区偏移量到redis
+                  println("partition : " + offsetRange.partition + " fromOffset:  " + offsetRange.fromOffset + " untilOffset: " + offsetRange.untilOffset)
+                  val topic_partition_key = offsetRange.topic + "_" + offsetRange.partition
+                  pipe.set(topic_partition_key, offsetRange.untilOffset.toString)
+                }
               mysqlConnet.commit() //提交mysql事务
-              mysqlConnet.close() //关闭资源
-              pipe.exec() //提交事务
+              mysqlConnet.close() //关闭mysql资源
+              pipe.exec() //提交redis事务
               pipe.sync //关闭pipeline
-              jedis.close()
+              jedis.close()//关闭redis连接资源
           }
         })
         ssc.start()
