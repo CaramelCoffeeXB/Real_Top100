@@ -6,8 +6,7 @@ import redis.clients.jedis.JedisPool
 /**
   * @author 咖啡不加糖
   */
-object InitRedis extends Serializable {
-
+case class InitRedis() {
   @transient private var pool: JedisPool = null
 
   def makePool(redisHost: String, redisPort: Int, redisTimeout: Int,

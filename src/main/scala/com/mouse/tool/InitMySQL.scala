@@ -6,8 +6,8 @@ import java.sql.{Connection, DriverManager}
 /**
   * @author 咖啡不加糖
   */
-object InitMySQL extends Serializable{
-      private var connection: Connection = null
+case class InitMySQL(){
+      @transient private var connection: Connection = null
       def getMySQLStatement(driver: String,url: String,username: String,password: String):Connection={
           //注册驱动
           Class.forName(driver)
